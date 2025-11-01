@@ -3,7 +3,24 @@
 from enum import Enum
 from typing import Self
 from urllib import request
+import subprocess
 import json
+
+
+def xz_uncompressed_size(path: str) -> int:
+    result = subprocess.run(
+        ["xz", "--robot", "--list", path],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+
+    for line in result.stdout.splitlines():
+        if line.startswith("totals"):
+            fields = line.split()
+            return int(fields[4])
+
+    raise RuntimeError("Failed to parse xz output; no totals line found")
 
 
 class Board(Enum):
@@ -68,6 +85,10 @@ def create_image_list(data):
 
     for img in beagle_images:
         _, _, board_name, release, branch, kernel_version, _ = img["name"].split("_")
+        download_url = img["browser_download_url"]
+        local_file, _ = request.urlretrieve(download_url)
+        uncompressed_size = xz_uncompressed_size(local_file)
+
         board = Board.from_search_str(board_name)
         board_name = board.board_name()
         name = f"{board_name} Armbian ({release}) v{kernel_version} {branch}"
@@ -76,7 +97,8 @@ def create_image_list(data):
             "name": name,
             "description": description,
             "icon": ARMBIAN_ICON,
-            "url": img["browser_download_url"],
+            "url": download_url,
+            "extract_size": uncompressed_size,
             "release_date": img["updated_at"].split("T")[0],
             "image_download_sha256": img["digest"].lstrip("sha256:"),
             "init_format": "armbian",
